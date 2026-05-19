@@ -1,13 +1,19 @@
-from typing import List
+﻿from typing import Any, Dict, List, Optional
 
 
 MAX_MESSAGES = 20
 
 
 class Message:
-    def __init__(self, role: str, content: str) -> None:
+    def __init__(
+        self,
+        role: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
         self.role = role
         self.content = content
+        self.metadata = metadata or {}
 
 
 class Memory:
@@ -19,8 +25,13 @@ class Memory:
         self.messages = []  # list[Message]
         self._next_index = 0
 
-    def add_message(self, role: str, content: str) -> Message:
-        message = Message(role=role, content=content)
+    def add_message(
+        self,
+        role: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Message:
+        message = Message(role=role, content=content, metadata=metadata)
 
         if len(self.messages) < self.max_messages:
             self.messages.append(message)
@@ -39,3 +50,4 @@ class Memory:
     def clear(self) -> None:
         self.messages.clear()
         self._next_index = 0
+

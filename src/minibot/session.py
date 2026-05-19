@@ -1,5 +1,5 @@
-import uuid
-from typing import Dict, List, Optional
+﻿import uuid
+from typing import Any, Dict, List, Optional
 
 from minibot.memory import MAX_MESSAGES, Memory, Message
 
@@ -14,8 +14,13 @@ class Session:
         self.session_id = session_id or str(uuid.uuid4())
         self.memory = memory or Memory(max_messages=max_messages)
 
-    def add_message(self, role: str, content: str) -> Message:
-        return self.memory.add_message(role=role, content=content)
+    def add_message(
+        self,
+        role: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Message:
+        return self.memory.add_message(role=role, content=content, metadata=metadata)
 
     def get_messages(self) -> List[Message]:
         return self.memory.get_messages()
@@ -68,3 +73,4 @@ class SessionManager:
 
 
 session_manager = SessionManager()
+

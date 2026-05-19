@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import os
 import sys
 from datetime import datetime
@@ -9,7 +9,8 @@ if __package__ is None:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from minibot.agent import Agent
-from minibot.llm import LLMClient
+from minibot.Providers import LLMProvider, LLMResponse, provider_registry
+from minibot.Providers.registry import DEFAULT_PROVIDER
 from minibot.session import SessionManager
 from minibot.tool import Tool, ToolRegistry
 
@@ -23,9 +24,7 @@ RESET = "\033[0m"
 class MiniBotClient:
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: Optional[str] = None,
+        provider: Optional[LLMProvider] = None,
         session_id: str = DEFAULT_SESSION_ID,
         env_file: str = ".env",
     ) -> None:
@@ -36,19 +35,27 @@ class MiniBotClient:
         self.sessions = SessionManager()
         self._register_default_tools()
 
-        self.llm = LLMClient(
-            api_key=api_key or env.get("api_key") or env.get("OPENAI_API_KEY"),
-            base_url=base_url or env.get("base_url") or env.get("OPENAI_BASE_URL"),
-            model=model or env.get("model") or env.get("OPENAI_MODEL"),
-        )
+        self.provider = provider or create_provider_from_env(env)
         self.agent = Agent(
-            llm=self.llm,
+            llm=self.provider,
             registry=self.registry,
             sessions=self.sessions,
         )
 
-    def ask(self, content: str, session_id: Optional[str] = None) -> str:
-        return self.agent.chat(content=content, session_id=session_id or self.session_id)
+    def ask(
+        self,
+        content: str,
+        session_id: Optional[str] = None,
+        stream: bool = False,
+        on_stream=None,
+    ) -> LLMResponse:
+        metadata = {"_wants_stream": bool(stream)}
+        return self.agent.chat(
+            content=content,
+            session_id=session_id or self.session_id,
+            metadata=metadata,
+            on_stream=on_stream,
+        )
 
     def set_session(self, session_id: str) -> None:
         self.session_id = session_id
@@ -81,13 +88,38 @@ class MiniBotClient:
         ))
 
 
+def create_provider_from_env(env: Dict[str, str]) -> LLMProvider:
+    provider_name = (env.get("DEFAULT_PROVIDER") or DEFAULT_PROVIDER).lower()
+    prefix = provider_name.upper()
+    config = {
+        "api_key": env.get("{}_API_KEY".format(prefix)),
+        "base_url": env.get("{}_BASE_URL".format(prefix)),
+        "model": env.get("{}_MODEL".format(prefix)),
+        "http_timeout": _env_int(env, "{}_HTTP_TIMEOUT".format(prefix), 120),
+        "stream_idle_timeout": _env_int(env, "{}_STREAM_IDLE_TIMEOUT".format(prefix), 90),
+        "total_timeout": _env_int(env, "{}_TOTAL_TIMEOUT".format(prefix), 300),
+        "chat_completions_timeout": _env_int(
+            env,
+            "{}_CHAT_COMPLETIONS_TIMEOUT".format(prefix),
+            120,
+        ),
+    }
+    return provider_registry.create(provider_name, **config)
+
+
+def _env_int(env: Dict[str, str], key: str, default: int) -> int:
+    value = env.get(key)
+    if value in (None, ""):
+        return default
+    return int(value)
+
+
 def _resolve_path(path: str) -> Optional[str]:
     if not path:
         return None
     if os.path.isabs(path):
         return path if os.path.exists(path) else None
 
-    # 从当前工作目录向上查找
     directory = os.getcwd()
     for _ in range(6):
         candidate = os.path.join(directory, path)
@@ -123,12 +155,15 @@ def load_env_file(path: str) -> Dict[str, str]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="MiniBot command line client.")
     parser.add_argument("message", nargs="*", help="Message to send. Empty means interactive mode.")
+    parser.add_argument("-m", "--message", dest="message_option", help="Message to send once.")
     parser.add_argument("--session", default=DEFAULT_SESSION_ID, help="Session id for memory isolation.")
-    parser.add_argument("--api-key", default=None, help="API key. Defaults to .env or environment variables.")
-    parser.add_argument("--base-url", default=None, help="OpenAI-compatible API base URL.")
-    parser.add_argument("--model", default=None, help="Model name.")
     parser.add_argument("--env-file", default=".env", help="Path to env file.")
     return parser
+
+
+def _stream_printer(text: str) -> None:
+    print(text, end="")
+    sys.stdout.flush()
 
 
 def run_interactive(client: MiniBotClient) -> None:
@@ -168,7 +203,9 @@ def run_interactive(client: MiniBotClient) -> None:
             continue
 
         print()
-        print("{}minibot:{} {}".format(YELLOW, RESET, client.ask(content)))
+        print("{}minibot:{} ".format(YELLOW, RESET), end="")
+        client.ask(content, stream=True, on_stream=_stream_printer)
+        print()
         print()
 
 
@@ -177,15 +214,15 @@ def main() -> None:
     args = parser.parse_args()
 
     client = MiniBotClient(
-        api_key=args.api_key,
-        base_url=args.base_url,
-        model=args.model,
         session_id=args.session,
         env_file=args.env_file,
     )
 
-    if args.message:
-        print("{}minibot:{} {}".format(YELLOW, RESET, client.ask(" ".join(args.message))))
+    message = args.message_option or (" ".join(args.message) if args.message else None)
+    if message:
+        print("{}minibot:{} ".format(YELLOW, RESET), end="")
+        client.ask(message, stream=True, on_stream=_stream_printer)
+        print()
         return
 
     run_interactive(client)
@@ -193,3 +230,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

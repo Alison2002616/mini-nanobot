@@ -1,40 +1,70 @@
 import os
 import sys
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 
 if __package__ is None:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from minibot.agent import Agent
+from minibot.Providers.base import LLMProvider, LLMResponse, OnStream
 from minibot.session import SessionManager
 from minibot.tool import Tool, ToolRegistry
 
 
-class FakeLLM:
-    def chat(self, messages: List[Dict[str, str]], temperature: float = 0.2) -> str:
+class MockProvider(LLMProvider):
+    name = "mock"
+
+    def __init__(self) -> None:
+        super().__init__(api_key="mock", base_url="mock", model="mock-model")
+        self.calls = 0
+
+    def chat(self, messages: List[Dict[str, Any]], **kwargs: Any) -> LLMResponse:
+        self.calls += 1
+        return self._response(messages)
+
+    def chat_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        on_stream: Optional[OnStream] = None,
+        **kwargs: Any
+    ) -> LLMResponse:
+        self.calls += 1
+        response = self._response(messages)
+        if on_stream:
+            on_stream(response.content)
+        return response
+
+    def _response(self, messages: List[Dict[str, Any]]) -> LLMResponse:
         last_message = messages[-1]["content"]
-
         if last_message.startswith("TOOL_RESULT:"):
-            return "工具调用完成，计算结果是 5。"
+            return LLMResponse(
+                content="Tool call finished. The result is 5.",
+                provider=self.name,
+                model=self.model,
+            )
 
-        return 'TOOL_CALL: add {"a": 2, "b": 3}'
+        return LLMResponse(
+            content='TOOL_CALL: add {"a": 2, "b": 3}',
+            provider=self.name,
+            model=self.model,
+        )
 
 
 class SimpleChat:
     def __init__(self) -> None:
         self.registry = ToolRegistry()
         self.sessions = SessionManager()
-        self.llm = FakeLLM()
+        self.provider = MockProvider()
         self._register_tools()
         self.agent = Agent(
-            llm=self.llm,
+            llm=self.provider,
             registry=self.registry,
             sessions=self.sessions,
         )
 
-    def run_once(self) -> str:
-        return self.agent.chat("请计算 2 + 3", session_id="simple-chat")
+    def run_once(self) -> LLMResponse:
+        return self.agent.chat("Please calculate 2 + 3.", session_id="simple-chat")
 
     def _register_tools(self) -> None:
         self.registry.register(Tool(
@@ -47,7 +77,7 @@ class SimpleChat:
 def main() -> None:
     chat = SimpleChat()
     reply = chat.run_once()
-    print(reply)
+    print(reply.content)
 
 
 if __name__ == "__main__":
