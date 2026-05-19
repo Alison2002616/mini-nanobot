@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_llm.py -v)",
+      "Bash(python -m unittest tests.test_llm -v)",
+      "Bash(PYTHONPATH=\"src;tests\" python -m unittest tests.test_llm -v)",
+      "Bash(PYTHONPATH=src python -c ' *)",
+      "Bash(PYTHONIOENCODING=utf-8 PYTHONPATH=src python -c ' *)",
+      "Bash(PYTHONIOENCODING=utf-8 PYTHONPATH=\"src\" python tests/test_llm.py)",
+      "Bash(PYTHONIOENCODING=utf-8 python cli.py \"用一句话介绍你自己\")"
+    ]
+  }
+}
